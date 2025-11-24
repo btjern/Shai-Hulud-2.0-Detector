@@ -550,6 +550,9 @@ export function checkMaliciousRunners(directory: string): SecurityFinding[] {
     path.join(directory, '.github'),
   ];
 
+  // Pattern to identify legitimate detector workflows (exclude from false positives)
+  const DETECTOR_WORKFLOW_PATTERN = /gensecaihq\/Shai-Hulud-2\.0-Detector|Shai-Hulud.*Detector|shai-hulud-check|shai-hulud.*security/i;
+
   for (const workflowDir of workflowDirs) {
     if (!fs.existsSync(workflowDir)) continue;
 
@@ -565,6 +568,11 @@ export function checkMaliciousRunners(directory: string): SecurityFinding[] {
         try {
           const content = fs.readFileSync(fullPath, 'utf8');
 
+          // Skip workflows that are using the detector (legitimate use)
+          if (DETECTOR_WORKFLOW_PATTERN.test(content) || DETECTOR_WORKFLOW_PATTERN.test(entry.name)) {
+            continue;
+          }
+
           // Check for malicious runner patterns
           for (const { pattern, description } of MALICIOUS_RUNNER_PATTERNS) {
             if (pattern.test(content)) {
@@ -579,17 +587,21 @@ export function checkMaliciousRunners(directory: string): SecurityFinding[] {
             }
           }
 
-          // Check for Shai-Hulud repo patterns in workflow
+          // Check for Shai-Hulud repo patterns in workflow (excluding detector references)
           for (const { pattern, description } of SHAI_HULUD_REPO_PATTERNS) {
             if (pattern.test(content)) {
-              findings.push({
-                type: 'shai-hulud-repo',
-                severity: 'critical',
-                title: `Shai-Hulud reference in workflow`,
-                description: `${description}. This workflow may be configured to exfiltrate data to attacker-controlled repositories.`,
-                location: fullPath,
-                evidence: pattern.toString(),
-              });
+              // Additional check: make sure it's not just referencing the detector
+              const contentWithoutDetector = content.replace(/gensecaihq\/Shai-Hulud-2\.0-Detector[^\s]*/gi, '');
+              if (pattern.test(contentWithoutDetector)) {
+                findings.push({
+                  type: 'shai-hulud-repo',
+                  severity: 'critical',
+                  title: `Shai-Hulud reference in workflow`,
+                  description: `${description}. This workflow may be configured to exfiltrate data to attacker-controlled repositories.`,
+                  location: fullPath,
+                  evidence: pattern.toString(),
+                });
+              }
             }
           }
         } catch {
