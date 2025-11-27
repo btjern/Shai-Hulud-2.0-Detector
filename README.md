@@ -343,7 +343,7 @@ There are two ways to set the options, either via CLI arguments or by setting en
 
 All other options are set to the below defaults and thus optional.
 
-Set the `--working-directory="/path/to/your/project"` flag when running the script or set the `WORKING_DIRECTORY="/path/to/your/project"` environment variable like listed below.
+Set the `--working-directory="/path/to/your/project"` flag when running the script or set the `INPUT_WORKING_DIRECTORY="/path/to/your/project"` environment variable like listed below.
 
 ##### Via CLI arguments (option 1)
 ```bash
@@ -362,26 +362,26 @@ Options:
 ##### Via Environment Variables (option 2)
 **Bash**
 ```bash
-export FAIL_ON_CRITICAL=true
-export FAIL_ON_HIGH=false
-export FAIL_ON_ANY=false
-export SCAN_LOCKFILES=true
-export SCAN_NODE_MODULES=true
-export OUTPUT_FORMAT="json"
-export WORKING_DIRECTORY="/path/to/your/project"
+export INPUT_FAIL_ON_CRITICAL=true
+export INPUT_FAIL_ON_HIGH=false
+export INPUT_FAIL_ON_ANY=false
+export INPUT_SCAN_LOCKFILES=true
+export INPUT_SCAN_NODE_MODULES=true
+export INPUT_OUTPUT_FORMAT="json"
+export INPUT_WORKING_DIRECTORY="/path/to/your/project"
 
 node dist/index.js
 ```
 
 **Powershell**
 ```powershell
-$Env:FAIL_ON_CRITICAL="true"
-$Env:FAIL_ON_HIGH="false"
-$Env:FAIL_ON_ANY="false"
-$Env:SCAN_LOCKFILES="true"
-$Env:SCAN_NODE_MODULES="true"
-$Env:OUTPUT_FORMAT="json"
-$Env:WORKING_DIRECTORY="/path/to/your/project"
+$Env:INPUT_FAIL_ON_CRITICAL="true"
+$Env:INPUT_FAIL_ON_HIGH="false"
+$Env:INPUT_FAIL_ON_ANY="false"
+$Env:INPUT_SCAN_LOCKFILES="true"
+$Env:INPUT_SCAN_NODE_MODULES="true"
+$Env:INPUT_OUTPUT_FORMAT="json"
+$Env:INPUT_WORKING_DIRECTORY="/path/to/your/project"
 
 node dist/index.js
 ```
