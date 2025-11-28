@@ -1,5 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import SemVer from 'semver/classes/semver';
+import intersects from 'semver/ranges/intersects';
+import satisfies from 'semver/functions/satisfies';
 import masterPackagesData from '../compromised-packages.json';
 import type {
 	MasterPackages,
@@ -223,10 +226,19 @@ export function isAffected(packageName: string, version: string = '*'): boolean 
 		const pkg = masterPackages.packages.find((p) => p.name === packageName);
 		if (!pkg) return false;
 
-		if (pkg.affectedVersions.includes('*')) {
+		if (version === '*' || pkg.affectedVersions.includes('*')) {
 			return true;
 		}
-		return pkg.affectedVersions.includes(version);
+		if (pkg.affectedVersions.includes(version)) {
+			return true;
+		}
+		try {
+			const semverVersion = new SemVer(version, {loose: true});
+			return pkg.affectedVersions.some(range => satisfies(semverVersion, range));
+		} catch (e) {
+			// Invalid semver version, probably because version is itself a range from package.lock
+			return pkg.affectedVersions.some(range => intersects(version, range, {loose: true}));
+		}
 	}
 	return false;
 }
