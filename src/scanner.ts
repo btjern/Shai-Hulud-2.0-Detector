@@ -1,5 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import SemVer from 'semver/classes/semver';
+import intersects from 'semver/ranges/intersects';
+import satisfies from 'semver/functions/satisfies';
 import masterPackagesData from '../compromised-packages.json';
 import type {
 	MasterPackages,
@@ -215,10 +218,29 @@ const affectedPackageNames = new Set(
  * Fast membership check for whether a package name appears in the compromised
  * master package list.
  * @param packageName The dependency name to check.
+ * @param version Optional specific version to check (defaults to '*').
  * @returns true if the package is flagged as affected.
  */
-export function isAffected(packageName: string): boolean {
-	return affectedPackageNames.has(packageName);
+export function isAffected(packageName: string, version: string = '*'): boolean {
+	if (affectedPackageNames.has(packageName)) {
+		const pkg = masterPackages.packages.find((p) => p.name === packageName);
+		if (!pkg) return false;
+
+		if (version === '*' || pkg.affectedVersions.includes('*')) {
+			return true;
+		}
+		if (pkg.affectedVersions.includes(version)) {
+			return true;
+		}
+		try {
+			const semverVersion = new SemVer(version, {loose: true});
+			return pkg.affectedVersions.some(range => satisfies(semverVersion, range));
+		} catch (e) {
+			// Invalid semver version, probably because version is itself a range from package.lock
+			return pkg.affectedVersions.some(range => intersects(version, range, {loose: true}));
+		}
+	}
+	return false;
 }
 
 /**
@@ -244,6 +266,7 @@ export function parsePackageJson(filePath: string): PackageJson | null {
 		const content = fs.readFileSync(filePath, 'utf8');
 		return JSON.parse(content) as PackageJson;
 	} catch {
+		console.error(`Failed to parse package.json at ${filePath}`);
 		return null;
 	}
 }
@@ -332,15 +355,15 @@ export function scanPackageJson(
 	};
 
 	for (const [name, version] of Object.entries(allDeps)) {
-		if (isAffected(name)) {
-			results.push({
-				package: name,
-				version: version || 'unknown',
-				severity: getPackageSeverity(name),
-				isDirect,
-				location: filePath,
-			});
-		}
+		const affected = isAffected(name, version);
+		results.push({
+			package: name,
+			version: version || 'unknown',
+			affected,
+			severity: affected ? getPackageSeverity(name) : 'none',
+			isDirect,
+			location: filePath,
+		});
 	}
 
 	return results;
@@ -365,15 +388,15 @@ export function scanPackageLock(filePath: string): ScanResult[] {
 			const match = pkgPath.match(/node_modules\/(.+)$/);
 			if (match) {
 				const name = match[1];
-				if (isAffected(name)) {
-					results.push({
-						package: name,
-						version: entry.version || 'unknown',
-						severity: getPackageSeverity(name),
-						isDirect: !pkgPath.includes('node_modules/node_modules'),
-						location: filePath,
-					});
-				}
+				const affected = isAffected(name, entry.version);
+				results.push({
+					package: name,
+					version: entry.version || 'unknown',
+					affected,
+					severity: affected ? getPackageSeverity(name) : 'none',
+					isDirect: !pkgPath.includes('node_modules/node_modules'),
+					location: filePath,
+				});
 			}
 		}
 	}
@@ -382,15 +405,15 @@ export function scanPackageLock(filePath: string): ScanResult[] {
 	if (lock.dependencies) {
 		const scanDependencies = (deps: Record<string, any>, isDirect: boolean) => {
 			for (const [name, entry] of Object.entries(deps)) {
-				if (isAffected(name)) {
-					results.push({
-						package: name,
-						version: entry.version || 'unknown',
-						severity: getPackageSeverity(name),
-						isDirect,
-						location: filePath,
-					});
-				}
+				const affected = isAffected(name, entry.version);
+				results.push({
+					package: name,
+					version: entry.version || 'unknown',
+					affected,
+					severity: affected ? getPackageSeverity(name) : 'none',
+					isDirect,
+					location: filePath,
+				});
 				// Recursively scan nested dependencies
 				if (entry.dependencies) {
 					scanDependencies(entry.dependencies, false);
@@ -416,15 +439,15 @@ export function scanYarnLock(filePath: string): ScanResult[] {
 	if (!packages) return results;
 
 	for (const [name, version] of packages.entries()) {
-		if (isAffected(name)) {
-			results.push({
-				package: name,
-				version,
-				severity: getPackageSeverity(name),
-				isDirect: false, // yarn.lock doesn't indicate direct vs transitive
-				location: filePath,
-			});
-		}
+		const affected = isAffected(name, version);
+		results.push({
+			package: name,
+			version,
+			affected,
+			severity: affected ? getPackageSeverity(name) : 'none',
+			isDirect: false, // yarn.lock doesn't indicate direct vs transitive
+			location: filePath,
+		});
 	}
 
 	return results;
@@ -1002,7 +1025,7 @@ export function checkAffectedNamespaces(filePath: string): SecurityFinding[] {
 
 	for (const [name, version] of Object.entries(allDeps)) {
 		// Skip if already in affected packages list
-		if (isAffected(name)) continue;
+		if (isAffected(name, version)) continue;
 
 		// Check if from affected namespace
 		for (const namespace of AFFECTED_NAMESPACES) {
@@ -1091,7 +1114,9 @@ export function runScan(
 			const key = `${result.package}@${result.version}`;
 			if (!seenPackages.has(key)) {
 				seenPackages.add(key);
-				allResults.push(result);
+				if (result.affected) {
+					allResults.push(result);
+				}
 			}
 		}
 
@@ -1137,7 +1162,9 @@ export function runScan(
 				const key = `${result.package}@${result.version}`;
 				if (!seenPackages.has(key)) {
 					seenPackages.add(key);
-					allResults.push(result);
+					if (result.affected) {
+						allResults.push(result);
+					}
 				}
 			}
 		}
@@ -1198,7 +1225,7 @@ export function runScan(
 	}
 
 	// Sort results by severity
-	const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+	const severityOrder = { critical: 0, high: 1, medium: 2, low: 3, none: 4 };
 	allResults.sort(
 		(a, b) => severityOrder[a.severity] - severityOrder[b.severity],
 	);
@@ -1214,6 +1241,7 @@ export function runScan(
 		cleanCount: seenPackages.size - allResults.length,
 		results: allResults,
 		securityFindings: allSecurityFindings,
+		scannedFilesCount: scannedFiles.length,
 		scannedFiles,
 		scanTime: Date.now() - startTime,
 	};

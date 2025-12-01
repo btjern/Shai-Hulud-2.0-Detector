@@ -3,9 +3,10 @@ import type { PackageJson, PackageLock, SarifResult, ScanResult, ScanSummary, Se
  * Fast membership check for whether a package name appears in the compromised
  * master package list.
  * @param packageName The dependency name to check.
+ * @param version Optional specific version to check (defaults to '*').
  * @returns true if the package is flagged as affected.
  */
-export declare function isAffected(packageName: string): boolean;
+export declare function isAffected(packageName: string, version?: string): boolean;
 /**
  * Retrieve the recorded severity for an affected package. Defaults to 'critical'
  * if the package entry is missing (defensive fallback).
